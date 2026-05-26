@@ -12,17 +12,19 @@ NTFY_TOPIC = os.getenv("NTFY_TOPIC")
 def get_current_flyers():
     current_flyers = {}
     
-    # Spustenie neviditeľného prehliadača
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         
-        # Otvorenie stránky a čakanie kým sa nenačíta
-        page.goto(URL, wait_until="networkidle")
-        # Pre istotu počkáme 3 sekundy, kým Kimbino vykreslí výsledky cez JavaScript
-        page.wait_for_timeout(3000)
+        # ZMENA TU: Použijeme domcontentloaded namiesto networkidle a pridáme timeout 60s
+        # Zamedzíme tak padaniu kvôli reklamám a trackerom, ktoré sa sťahujú na pozadí.
+        print("Načítavam stránku...")
+        page.goto(URL, wait_until="domcontentloaded", timeout=60000)
         
-        # Získame plnohodnotné HTML po spustení JavaScriptu
+        # Natvrdo počkáme 5 sekúnd, kým Kimbino vyrenderuje výsledky cez JavaScript
+        print("Čakám 5 sekúnd na zobrazenie letákov...")
+        page.wait_for_timeout(5000)
+        
         html = page.content()
         browser.close()
 
@@ -67,6 +69,7 @@ def main():
     try:
         current_flyers = get_current_flyers()
         current_urls = set(current_flyers.keys())
+        print(f"Nájdených odkazov celkovo: {len(current_urls)}")
     except Exception as e:
         print(f"Chyba pri sťahovaní stránky: {e}")
         sys.exit(1)
@@ -75,12 +78,9 @@ def main():
     removed_urls = old_urls - current_urls
 
     if new_urls:
-        # Keď spúšťaš bota prvýkrát a máš prázdny state.json, našlo by to všetky aktuálne 
-        # letáky ako "nové". Ak ich je 8, prišli by ti notifikácie.
         for url in new_urls:
             msg = f"Našiel sa nový leták: {url}"
             print(msg)
-            # Notifikáciu pošleme len pre nové letáky
             send_notification(msg, url)
     else:
         print("Žiadne nové letáky (všetko už bolo videné).")
