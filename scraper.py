@@ -16,12 +16,9 @@ def get_current_flyers():
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         
-        # ZMENA TU: Použijeme domcontentloaded namiesto networkidle a pridáme timeout 60s
-        # Zamedzíme tak padaniu kvôli reklamám a trackerom, ktoré sa sťahujú na pozadí.
         print("Načítavam stránku...")
         page.goto(URL, wait_until="domcontentloaded", timeout=60000)
         
-        # Natvrdo počkáme 5 sekúnd, kým Kimbino vyrenderuje výsledky cez JavaScript
         print("Čakám 5 sekúnd na zobrazenie letákov...")
         page.wait_for_timeout(5000)
         
@@ -35,10 +32,11 @@ def get_current_flyers():
     for a_tag in soup.find_all('a', href=True):
         href = a_tag['href']
         
-        # Heuristika: Letáky majú zvyčajne url v tvare "/obchod/nazov-letaku/"
-        # Ignorujeme základné odkazy ako /kontakt, /prihlasenie, a berieme len tie, ktoré vyzerajú ako leták (obsahujú pomlčku)
-        if href.startswith('/') and '-' in href and len(href) > 10:
-            full_url = f"https://www.kimbino.sk{href}"
+        # NAJPRÍSNEJŠÍ FILTER: 
+        # Berieme len to, čo má v adrese "-letak-" a zároveň odkazuje na konkrétnu stranu "#page_"
+        # Toto presne odfiltruje len tých 6 skutočných výsledkov hľadania.
+        if '-letak-' in href and '#page_' in href:
+            full_url = f"https://www.kimbino.sk{href}" if href.startswith('/') else href
             current_flyers[full_url] = full_url
 
     return current_flyers
@@ -69,7 +67,7 @@ def main():
     try:
         current_flyers = get_current_flyers()
         current_urls = set(current_flyers.keys())
-        print(f"Nájdených odkazov celkovo: {len(current_urls)}")
+        print(f"Nájdených REÁLNYCH letákov celkovo: {len(current_urls)}")
     except Exception as e:
         print(f"Chyba pri sťahovaní stránky: {e}")
         sys.exit(1)
@@ -86,7 +84,7 @@ def main():
         print("Žiadne nové letáky (všetko už bolo videné).")
 
     if removed_urls:
-        print(f"Boli odstránené staré letáky: {removed_urls}")
+        print(f"Boli odstránené staré/neplatné letáky: {len(removed_urls)} ks")
 
     with open(STATE_FILE, 'w', encoding='utf-8') as f:
         json.dump(list(current_urls), f, indent=4)
