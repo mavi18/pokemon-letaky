@@ -2,16 +2,14 @@ name: Kimbino Pokemon Bot
 
 on:
   schedule:
-    # GitHub beží v UTC čase. 
-    # Letný čas v BA (CEST) je UTC+2, takže 8:00 = 6:00 a 18:00 = 16:00
     - cron: '0 6,16 * * *'
-  workflow_dispatch: # Toto tlačidlo ti umožní spustiť bota manuálne z GitHubu kedykoľvek
+  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Dôležité: povoľuje botovi zapisovať do repozitára
+      contents: write
 
     steps:
       - name: Checkout repozitára
@@ -23,7 +21,9 @@ jobs:
           python-version: '3.10'
 
       - name: Inštalácia závislostí
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
 
       - name: Spustenie Scrapera
         env:
@@ -35,6 +35,4 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add state.json
-          # Commitne sa len vtedy, ak sa súbor zmenil (niečo pribudlo/zmizlo)
           git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update state.json" && git push)
-

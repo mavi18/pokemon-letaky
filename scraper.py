@@ -1,5 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 import json
 import os
 import sys
@@ -9,30 +10,34 @@ STATE_FILE = "state.json"
 NTFY_TOPIC = os.getenv("NTFY_TOPIC")
 
 def get_current_flyers():
-    # Hlavička, aby sme nevyzerali ako bot a Kimbino nás nezablokovalo
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-    }
-    
-    response = requests.get(URL, headers=headers)
-    response.raise_for_status()
-    
-    soup = BeautifulSoup(response.text, 'html.parser')
-    
     current_flyers = {}
     
-    # Kimbino zvyčajne obaľuje letáky do odkazov (a tagy). 
-    # Hľadáme všetky odkazy, ktoré by mohli reprezentovať leták.
-    # Upozornenie: Ak Kimbino mení štruktúru, selektory bude možno potrebné upraviť.
+    # Spustenie neviditeľného prehliadača
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        
+        # Otvorenie stránky a čakanie kým sa nenačíta
+        page.goto(URL, wait_until="networkidle")
+        # Pre istotu počkáme 3 sekundy, kým Kimbino vykreslí výsledky cez JavaScript
+        page.wait_for_timeout(3000)
+        
+        # Získame plnohodnotné HTML po spustení JavaScriptu
+        html = page.content()
+        browser.close()
+
+    # Parsovanie HTML
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    # Hľadáme všetky odkazy
     for a_tag in soup.find_all('a', href=True):
-        title = a_tag.get_text(strip=True).lower()
         href = a_tag['href']
         
-        # Ak odkaz alebo text obsahuje slovo pokemon a vyzerá to ako leták
-        if 'pokemon' in title or 'pokemon' in href.lower():
-            # Zabezpečíme absolútnu URL
-            full_url = href if href.startswith('http') else f"https://www.kimbino.sk{href}"
-            current_flyers[full_url] = title
+        # Heuristika: Letáky majú zvyčajne url v tvare "/obchod/nazov-letaku/"
+        # Ignorujeme základné odkazy ako /kontakt, /prihlasenie, a berieme len tie, ktoré vyzerajú ako leták (obsahujú pomlčku)
+        if href.startswith('/') and '-' in href and len(href) > 10:
+            full_url = f"https://www.kimbino.sk{href}"
+            current_flyers[full_url] = full_url
 
     return current_flyers
 
@@ -50,7 +55,6 @@ def send_notification(message, url):
     requests.post(ntfy_url, data=message.encode('utf-8'), headers=headers)
 
 def main():
-    # Načítanie starého stavu
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, 'r', encoding='utf-8') as f:
             try:
@@ -60,7 +64,6 @@ def main():
     else:
         old_urls = set()
 
-    # Získanie aktuálneho stavu
     try:
         current_flyers = get_current_flyers()
         current_urls = set(current_flyers.keys())
@@ -68,26 +71,25 @@ def main():
         print(f"Chyba pri sťahovaní stránky: {e}")
         sys.exit(1)
 
-    # Porovnanie
     new_urls = current_urls - old_urls
     removed_urls = old_urls - current_urls
 
-    # Notifikovanie o nových letákoch
     if new_urls:
+        # Keď spúšťaš bota prvýkrát a máš prázdny state.json, našlo by to všetky aktuálne 
+        # letáky ako "nové". Ak ich je 8, prišli by ti notifikácie.
         for url in new_urls:
-            msg = f"Našiel sa nový leták obsahujúci Pokémon: {url}"
+            msg = f"Našiel sa nový leták: {url}"
             print(msg)
+            # Notifikáciu pošleme len pre nové letáky
             send_notification(msg, url)
     else:
-        print("Žiadne nové letáky.")
+        print("Žiadne nové letáky (všetko už bolo videné).")
 
     if removed_urls:
         print(f"Boli odstránené staré letáky: {removed_urls}")
 
-    # Uloženie aktuálneho stavu (prepíše sa starý stav, odstránené letáky zmiznú)
     with open(STATE_FILE, 'w', encoding='utf-8') as f:
         json.dump(list(current_urls), f, indent=4)
 
 if __name__ == "__main__":
     main()
-
