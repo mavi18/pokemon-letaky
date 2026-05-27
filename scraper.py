@@ -34,7 +34,6 @@ def get_current_flyers():
         
         # NAJPRÍSNEJŠÍ FILTER: 
         # Berieme len to, čo má v adrese "-letak-" a zároveň odkazuje na konkrétnu stranu "#page_"
-        # Toto presne odfiltruje len tých 6 skutočných výsledkov hľadania.
         if '-letak-' in href and '#page_' in href:
             full_url = f"https://www.kimbino.sk{href}" if href.startswith('/') else href
             current_flyers[full_url] = full_url
@@ -46,13 +45,18 @@ def send_notification(message, url):
         print("Chyba: NTFY_TOPIC nie je nastavený.")
         return
         
-    ntfy_url = f"https://ntfy.sh/{NTFY_TOPIC}"
-    headers = {
-        "Title": "Nový Pokémon leták!",
-        "Tags": "tada,shopping_bags",
-        "Click": url
+    ntfy_url = "https://ntfy.sh/"
+    
+    # Posielame dáta ako JSON, ktorý natívne podporuje diakritiku (UTF-8)
+    payload = {
+        "topic": NTFY_TOPIC,
+        "title": "Nový Pokémon leták!",
+        "message": message,
+        "tags": ["tada", "shopping_bags"],
+        "click": url
     }
-    requests.post(ntfy_url, data=message.encode('utf-8'), headers=headers)
+    
+    requests.post(ntfy_url, json=payload)
 
 def main():
     if os.path.exists(STATE_FILE):
